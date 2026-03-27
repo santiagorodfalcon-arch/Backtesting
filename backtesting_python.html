@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Backtesting Autocall — Precios Reales</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+:root{--bg:#0d0f14;--bg2:#13161e;--bg3:#1a1e28;--bg4:#20242f;--border:rgba(255,255,255,.07);--border2:rgba(255,255,255,.13);--text:#e8eaf0;--muted:#6b7280;--muted2:#4b5563;--green:#4ade80;--blue:#60a5fa;--red:#f87171;--amber:#fbbf24;--orange:#fb923c;}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-serif;min-height:100vh;}
+.header{border-bottom:1px solid var(--border);padding:16px 28px;display:flex;align-items:center;justify-content:space-between;background:var(--bg2);}
+.header h1{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:500;letter-spacing:.06em;}
+.header p{font-size:11px;color:var(--muted);margin-top:2px;}
+.tag{font-family:'IBM Plex Mono',monospace;font-size:10px;background:rgba(74,222,128,.1);color:var(--green);border:1px solid rgba(74,222,128,.2);padding:3px 10px;border-radius:3px;letter-spacing:.08em;}
+.layout{display:grid;grid-template-columns:300px 1fr;min-height:calc(100vh - 57px);}
+.sidebar{background:var(--bg2);border-right:1px solid var(--border);padding:18px;overflow-y:auto;}
+.content{padding:22px;overflow-y:auto;}
+.s-section{margin-bottom:20px;}
+.s-title{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid var(--border);}
+.ctrl{margin-bottom:11px;}
+.ctrl label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;}
+.ctrl select,.ctrl input{width:100%;padding:7px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:5px;color:var(--text);font-family:'IBM Plex Mono',monospace;font-size:12px;outline:none;}
+.ctrl select:focus,.ctrl input:focus{border-color:rgba(96,165,250,.5);}
+.radio-group{display:flex;gap:6px;}
+.radio-btn{flex:1;padding:6px 4px;background:var(--bg3);border:1px solid var(--border2);border-radius:5px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--muted);cursor:pointer;transition:all .15s;}
+.radio-btn.active{background:rgba(96,165,250,.1);border-color:var(--blue);color:var(--blue);}
+.server-status{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:5px;background:var(--bg3);border:1px solid var(--border2);margin-bottom:14px;font-family:'IBM Plex Mono',monospace;font-size:11px;}
+.status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.status-dot.ok{background:var(--green);}
+.status-dot.err{background:var(--red);}
+.status-dot.checking{background:var(--amber);animation:pulse 1s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
+.ticker-search{position:relative;margin-bottom:8px;}
+.ticker-search input{width:100%;padding:7px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:5px;color:var(--text);font-family:'IBM Plex Mono',monospace;font-size:12px;outline:none;}
+.ticker-search input:focus{border-color:rgba(96,165,250,.5);}
+.dropdown{position:absolute;top:100%;left:0;right:0;background:var(--bg4);border:1px solid var(--border2);border-top:none;border-radius:0 0 5px 5px;max-height:180px;overflow-y:auto;z-index:100;display:none;}
+.dropdown.open{display:block;}
+.dd-item{padding:7px 10px;font-family:'IBM Plex Mono',monospace;font-size:11px;cursor:pointer;display:flex;justify-content:space-between;}
+.dd-item:hover{background:rgba(255,255,255,.05);}
+.dd-item .tsym{color:var(--blue);font-weight:500;}
+.dd-item .tname{color:var(--muted);font-size:10px;}
+.selected-tickers{display:flex;flex-direction:column;gap:6px;}
+.sel-tick{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:5px;}
+.sel-tick .info{display:flex;align-items:center;gap:8px;}
+.sel-tick .sym{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:500;}
+.sel-tick .nm{font-size:11px;color:var(--muted);}
+.sel-tick .rm{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0;}
+.sel-tick .rm:hover{color:var(--red);}
+.tick-hint{font-size:11px;color:var(--muted2);margin-top:5px;}
+.num-ctrl{display:flex;gap:6px;margin-bottom:10px;}
+.num-btn{flex:1;padding:6px;background:var(--bg3);border:1px solid var(--border2);border-radius:5px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--muted);cursor:pointer;transition:all .15s;}
+.num-btn.active{background:rgba(96,165,250,.1);border-color:var(--blue);color:var(--blue);}
+.run-btn{width:100%;padding:10px;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.3);border-radius:5px;color:var(--green);font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:500;letter-spacing:.06em;cursor:pointer;transition:all .15s;margin-top:2px;}
+.run-btn:hover{background:rgba(74,222,128,.18);}
+.run-btn:disabled{opacity:.35;cursor:not-allowed;}
+.loading-overlay{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 20px;gap:14px;}
+.spinner{width:28px;height:28px;border:2px solid var(--border2);border-top-color:var(--green);border-radius:50%;animation:spin .8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.loading-text{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--muted);}
+.fetch-rows{display:flex;flex-direction:column;gap:4px;}
+.fetch-row{font-family:'IBM Plex Mono',monospace;font-size:11px;display:flex;align-items:center;gap:8px;}
+.fetch-sym{color:var(--blue);min-width:55px;}
+.fetch-st{color:var(--muted);}
+.fetch-st.ok{color:var(--green);}
+.fetch-st.err{color:var(--red);}
+.config-bar{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:18px;}
+.cfg-tag{font-family:'IBM Plex Mono',monospace;font-size:10px;padding:3px 9px;border-radius:3px;background:rgba(255,255,255,.04);border:1px solid var(--border2);color:var(--muted);}
+.cfg-tag span{color:var(--text);}
+.data-tag{background:rgba(74,222,128,.05);border-color:rgba(74,222,128,.2);color:var(--green);}
+.bt-report{background:var(--bg2);border:1px solid var(--border2);border-radius:8px;margin-bottom:20px;overflow:hidden;}
+.bt-header{display:flex;align-items:center;justify-content:space-between;padding:11px 16px;border-bottom:1px solid var(--border2);background:var(--bg3);}
+.bt-title{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:500;letter-spacing:.06em;}
+.bt-sub{font-size:11px;color:var(--muted);}
+.bt-row{display:flex;align-items:center;justify-content:space-between;padding:9px 16px;border-bottom:1px solid var(--border);}
+.bt-row:last-child{border-bottom:none;}
+.bt-sep{border-top:1px solid var(--border2);}
+.bt-total{background:rgba(255,255,255,.02);}
+.bt-label{font-size:13px;}
+.bt-val{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:500;}
+.g{color:var(--green);}.r{color:var(--red);}.a{color:var(--amber);}.mu{color:var(--muted);}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:20px;}
+.metric{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:13px 15px;}
+.metric .lbl{font-size:10px;color:var(--muted);font-family:'IBM Plex Mono',monospace;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px;}
+.metric .val{font-family:'IBM Plex Mono',monospace;font-size:19px;font-weight:500;}
+.metric .sub{font-size:11px;color:var(--muted);margin-top:3px;}
+.cg{color:var(--green);}.cb{color:var(--blue);}.cr{color:var(--red);}.ca{color:var(--amber);}
+.sec{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;}
+.chart-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:18px;margin-bottom:16px;}
+.chart-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px;}
+.legend{display:flex;gap:12px;flex-wrap:wrap;}
+.legend-item{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);}
+.leg-line{width:14px;height:2px;border-radius:1px;}
+.chart-wrap{position:relative;width:100%;height:250px;}
+.table-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:18px;margin-bottom:16px;overflow-x:auto;}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+th{text-align:left;color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.07em;text-transform:uppercase;padding:6px 10px;border-bottom:1px solid var(--border);}
+td{padding:6px 10px;border-bottom:1px solid rgba(255,255,255,.03);font-family:'IBM Plex Mono',monospace;font-size:12px;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:rgba(255,255,255,.02);}
+.badge{display:inline-block;font-size:10px;padding:2px 7px;border-radius:3px;font-family:'IBM Plex Mono',monospace;}
+.bg-green{background:rgba(74,222,128,.1);color:#4ade80;border:1px solid rgba(74,222,128,.2);}
+.bg-blue{background:rgba(96,165,250,.1);color:#60a5fa;border:1px solid rgba(96,165,250,.2);}
+.bg-red{background:rgba(248,113,113,.1);color:#f87171;border:1px solid rgba(248,113,113,.2);}
+.bg-amber{background:rgba(251,191,36,.1);color:#fbbf24;border:1px solid rgba(251,191,36,.2);}
+.bg-gray{background:rgba(107,114,128,.1);color:#9ca3af;border:1px solid rgba(107,114,128,.2);}
+.footnote{font-size:11px;color:var(--muted);line-height:1.7;padding-left:11px;border-left:2px solid var(--border2);margin-bottom:18px;}
+.dl-bar{display:flex;gap:8px;margin-bottom:20px;}
+.dl-btn{padding:8px 16px;border-radius:5px;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:500;cursor:pointer;letter-spacing:.04em;transition:all .15s;}
+.dl-btn.pdf{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.3);color:#f87171;}
+.dl-btn.pdf:hover{background:rgba(248,113,113,.18);}
+.dl-btn.csv{background:rgba(96,165,250,.1);border:1px solid rgba(96,165,250,.3);color:#60a5fa;}
+.dl-btn.csv:hover{background:rgba(96,165,250,.18);}
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:50px 20px;color:var(--muted);text-align:center;}
+.empty .icon{font-size:28px;margin-bottom:10px;opacity:.25;}
+.empty p{font-size:13px;line-height:1.8;}
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+@media(max-width:860px){.layout{grid-template-columns:1fr;}.metrics{grid-template-columns:repeat(2,1fr);}}
+</style>
+</head>
+<body>
+<div class="header">
+  <div>
+    <h1>BACKTESTING — AUTOCALL CONFIGURABLE</h1>
+    <p>Precios reales · yfinance · Conditional Coupons Autocall · Worst-of · Barrera europea</p>
+  </div>
+  <div class="tag">DATOS REALES</div>
+</div>
+<div class="layout">
+<div class="sidebar">
+
+  <div class="s-section">
+    <div class="s-title">Servidor Local</div>
+    <div class="server-status" id="serverStatus">
+      <div class="status-dot checking" id="statusDot"></div>
+      <span id="statusText">Verificando servidor...</span>
+    </div>
+  </div>
+
+  <div class="s-section">
+    <div class="s-title">Subyacentes</div>
+    <div class="ctrl">
+      <label>Número de subyacentes</label>
+      <div class="num-ctrl">
+        <div class="num-btn active" data-n="1" onclick="setNum(1)">1</div>
+        <div class="num-btn" data-n="2" onclick="setNum(2)">2</div>
+        <div class="num-btn" data-n="3" onclick="setNum(3)">3</div>
+      </div>
+    </div>
+    <div class="ctrl">
+      <label>Buscar y agregar</label>
+      <div class="ticker-search">
+        <input type="text" id="tickerSearch" placeholder="SPY, AAPL, TSLA..." autocomplete="off">
+        <div class="dropdown" id="tickerDropdown"></div>
+      </div>
+    </div>
+    <div class="selected-tickers" id="selectedTickers"></div>
+    <p class="tick-hint" id="tickHint"></p>
+  </div>
+
+  <div class="s-section">
+    <div class="s-title">Estructura</div>
+    <div class="ctrl">
+      <label>Vencimiento</label>
+      <div class="radio-group">
+        <div class="radio-btn" data-val="18" onclick="setMonths(18)">18m</div>
+        <div class="radio-btn active" data-val="24" onclick="setMonths(24)">24m</div>
+        <div class="radio-btn" data-val="36" onclick="setMonths(36)">36m</div>
+      </div>
+    </div>
+    <div class="ctrl">
+      <label>Frecuencia observación</label>
+      <select id="obsFreq">
+        <option value="1">Mensual</option>
+        <option value="3" selected>Trimestral</option>
+        <option value="4">Cuatrimestral</option>
+        <option value="6">Semestral</option>
+      </select>
+    </div>
+    <div class="ctrl">
+      <label>Barrera (%)</label>
+      <input type="number" id="barrierPct" value="70" min="30" max="99" step="1">
+    </div>
+    <div class="ctrl">
+      <label>Autocall trigger (%)</label>
+      <input type="number" id="autocallPct" value="100" min="50" max="120" step="1">
+    </div>
+  </div>
+
+  <div class="s-section">
+    <div class="s-title">Precio y Cupón</div>
+    <div class="ctrl">
+      <label>Precio oferta (%)</label>
+      <input type="number" id="offerPrice" value="97.30" min="80" max="105" step="0.1">
+    </div>
+    <div class="ctrl">
+      <label>Cupón anual (%)</label>
+      <input type="number" id="couponPA" value="9.25" min="1" max="50" step="0.25">
+    </div>
+    <div class="ctrl">
+      <label>Tipo de cupón</label>
+      <select id="couponType">
+        <option value="memory">Con memoria</option>
+        <option value="nomemory">Sin memoria</option>
+      </select>
+    </div>
+  </div>
+
+  <button class="run-btn" id="runBtn" onclick="startBacktest()">▶ EJECUTAR BACKTESTING</button>
+
+</div>
+<div class="content" id="contentArea">
+  <div class="empty">
+    <div class="icon">◈</div>
+    <p>Asegurate que el servidor esté corriendo<br>luego elegí los subyacentes y ejecutá</p>
+  </div>
+</div>
+</div>
+
+<script>
+const SERVER=location.hostname==='localhost'||location.hostname==='127.0.0.1'?'http://localhost:7432':'';
+const COLORS=['#60a5fa','#4ade80','#fb923c'];
+const TICKERS=[
+  {sym:'AAPL',name:'Apple Inc.'},{sym:'ABBV',name:'AbbVie Inc.'},{sym:'ABT',name:'Abbott Laboratories'},
+  {sym:'AMD',name:'Advanced Micro Devices'},{sym:'AMZN',name:'Amazon.com Inc.'},{sym:'AXP',name:'American Express'},
+  {sym:'BAC',name:'Bank of America'},{sym:'BKR',name:'Baker Hughes'},{sym:'C',name:'Citigroup Inc.'},
+  {sym:'COST',name:'Costco Wholesale'},{sym:'DAL',name:'Delta Air Lines'},{sym:'GLD',name:'SPDR Gold Shares'},
+  {sym:'GOOGL',name:'Alphabet Inc.'},{sym:'GS',name:'Goldman Sachs'},{sym:'IBIT',name:'iShares Bitcoin Trust'},
+  {sym:'ITUB',name:'Itaú Unibanco'},{sym:'IWM',name:'iShares Russell 2000 ETF'},{sym:'JNJ',name:'Johnson & Johnson'},
+  {sym:'JPM',name:'JPMorgan Chase'},{sym:'KO',name:'Coca-Cola Company'},{sym:'LLY',name:'Eli Lilly'},
+  {sym:'LYB',name:'LyondellBasell Industries'},{sym:'MELI',name:'MercadoLibre Inc.'},{sym:'META',name:'Meta Platforms'},
+  {sym:'MOH',name:'Molina Healthcare'},{sym:'MRK',name:'Merck & Co.'},{sym:'MRNA',name:'Moderna Inc.'},
+  {sym:'MS',name:'Morgan Stanley'},{sym:'MSFT',name:'Microsoft Corp.'},{sym:'NKE',name:'Nike Inc.'},
+  {sym:'NU',name:'Nu Holdings'},{sym:'NVO',name:'Novo Nordisk'},{sym:'PAM',name:'Pampa Energía'},
+  {sym:'PBR',name:'Petrobras'},{sym:'PFE',name:'Pfizer Inc.'},{sym:'PG',name:'Procter & Gamble'},
+  {sym:'QQQ',name:'Invesco QQQ Trust'},{sym:'SLV',name:'iShares Silver Trust'},{sym:'SPY',name:'SPDR S&P 500 ETF'},
+  {sym:'TSLA',name:'Tesla Inc.'},{sym:'UBER',name:'Uber Technologies'},{sym:'UNH',name:'UnitedHealth Group'},
+  {sym:'V',name:'Visa Inc.'},{sym:'VIST',name:'Vista Energy'},{sym:'WFC',name:'Wells Fargo'},
+  {sym:'WMT',name:'Walmart Inc.'},{sym:'YPF',name:'YPF SA'},
+];
+
+let numTickers=1, maturityMonths=24, selectedSymbols=[], priceCache={}, chart=null;
+
+// ─── SERVER CHECK ─────────────────────────────────────────────────────────
+async function checkServer(){
+  try{
+    const r=await fetch(SERVER,{signal:AbortSignal.timeout(3000)});
+    if(r.ok){
+      document.getElementById('statusDot').className='status-dot ok';
+      document.getElementById('statusText').textContent='Servidor activo en :7432';
+    }
+  }catch(e){
+    document.getElementById('statusDot').className='status-dot err';
+    document.getElementById('statusText').innerHTML='Servidor offline &mdash; corré server.py';
+  }
+}
+checkServer();
+setInterval(checkServer, 8000);
+
+// ─── CONTROLS ─────────────────────────────────────────────────────────────
+function setNum(n){
+  numTickers=n;
+  document.querySelectorAll('.num-btn').forEach(b=>b.classList.toggle('active',parseInt(b.dataset.n)===n));
+  while(selectedSymbols.length>n) selectedSymbols.pop();
+  renderTickers();
+}
+function setMonths(m){
+  maturityMonths=m;
+  document.querySelectorAll('.radio-btn').forEach(b=>b.classList.toggle('active',parseInt(b.dataset.val)===m));
+}
+
+// ─── TICKER SEARCH ────────────────────────────────────────────────────────
+const searchInput=document.getElementById('tickerSearch');
+const dropdown=document.getElementById('tickerDropdown');
+searchInput.addEventListener('input',()=>{
+  const q=searchInput.value.trim().toUpperCase();
+  if(!q){dropdown.classList.remove('open');return;}
+  const hits=TICKERS.filter(t=>t.sym.includes(q)||t.name.toUpperCase().includes(q)).slice(0,10);
+  dropdown.innerHTML=hits.map(t=>`<div class="dd-item" onclick="addTicker('${t.sym}','${t.name.replace(/'/g,"\\'")}')"><span class="tsym">${t.sym}</span><span class="tname">${t.name}</span></div>`).join('');
+  dropdown.classList.toggle('open',hits.length>0);
+});
+document.addEventListener('click',e=>{if(!e.target.closest('.ticker-search'))dropdown.classList.remove('open');});
+
+function addTicker(sym,name){
+  if(selectedSymbols.find(t=>t.sym===sym)){dropdown.classList.remove('open');searchInput.value='';return;}
+  if(selectedSymbols.length>=numTickers) selectedSymbols.shift();
+  selectedSymbols.push({sym,name});
+  renderTickers();
+  dropdown.classList.remove('open');
+  searchInput.value='';
+}
+function removeTicker(sym){selectedSymbols=selectedSymbols.filter(t=>t.sym!==sym);delete priceCache[sym];renderTickers();}
+function renderTickers(){
+  document.getElementById('selectedTickers').innerHTML=selectedSymbols.map((t,i)=>{
+    const cached=priceCache[t.sym];
+    const st=cached?`<span style="font-family:IBM Plex Mono,monospace;font-size:10px;color:var(--green)">✓ ${Object.keys(cached).length}m</span>`:`<span style="font-family:IBM Plex Mono,monospace;font-size:10px;color:var(--muted)">pendiente</span>`;
+    return `<div class="sel-tick"><div class="info"><span class="sym" style="color:${COLORS[i]}">${t.sym}</span><span class="nm">${t.name}</span></div><div style="display:flex;align-items:center;gap:8px">${st}<button class="rm" onclick="removeTicker('${t.sym}')">✕</button></div></div>`;
+  }).join('');
+  const rem=numTickers-selectedSymbols.length;
+  document.getElementById('tickHint').textContent=rem>0?`Agregá ${rem} subyacente${rem>1?'s':''} más`:'';
+}
+
+// ─── FETCH via local server ────────────────────────────────────────────────
+async function fetchPrices(sym){
+  if(priceCache[sym]) return priceCache[sym];
+  const res=await fetch(`${SERVER}/prices?sym=${encodeURIComponent(sym)}`);
+  const data=await res.json();
+  if(data.error) throw new Error(data.error);
+  priceCache[sym]=data.monthly;
+  return data.monthly;
+}
+
+// ─── UTILS ────────────────────────────────────────────────────────────────
+function mkl(key){const[y,m]=key.split('-');return `${'EneFebrMarAbrMayJunJulAgoSepOctNovDic'.slice((+m-1)*3,(+m-1)*3+3)}-${y.slice(2)}`;}
+function sharedKeys(monthlies){let keys=Object.keys(monthlies[0]).filter(k=>k>='2010-01').sort();for(let i=1;i<monthlies.length;i++){const s=new Set(Object.keys(monthlies[i]));keys=keys.filter(k=>s.has(k));}return keys;}
+
+// ─── SIMULATE ─────────────────────────────────────────────────────────────
+function simulate(si,monthlies,keys,matM,freqM,bar,ac,ofr,cpn,mem){
+  const barrier=bar/100,autocall=ac/100,offer=ofr/100,cpnObs=(cpn/100)*(freqM/12);
+  const totalObs=Math.floor(matM/freqM);
+  const base=monthlies.map(m=>m[keys[si]]);
+  if(base.some(p=>!p||p<=0)) return null;
+  const rel=(si2,off)=>{const k=keys[si+off];if(!k)return null;const p=monthlies[si2][k];return p&&p>0?p/base[si2]:null;};
+  let memory=0,coupons=0,rows=[],result=null,endObs=totalObs;
+  for(let obs=1;obs<=totalObs;obs++){
+    const off=obs*freqM;if(si+off>=keys.length)break;
+    const perfs=monthlies.map((_,i)=>rel(i,off));if(perfs.some(p=>p===null))break;
+    const wof=+Math.min(...perfs).toFixed(5);
+    let ct=0,rr='',rb='';
+    if(wof>=barrier){ct=mem?(1+memory)*cpnObs:cpnObs;coupons+=ct;memory=0;}else memory++;
+    if(wof>=autocall&&obs<totalObs){
+      endObs=obs;result={type:'autocall',capital:1,months:obs*freqM,coupons};rr='AUTOCALL';rb='green';
+      rows.push({obs,label:mkl(keys[si+off]),perfs:perfs.map(p=>(p*100).toFixed(2)),wof:(wof*100).toFixed(2),rr,rb});break;
+    }
+    if(obs===totalObs){
+      endObs=obs;
+      if(wof>=barrier){result={type:'maturity_ok',capital:1,months:obs*freqM,coupons};rr='Vencimiento OK';rb='blue';}
+      else{result={type:'maturity_loss',capital:wof,months:obs*freqM,coupons};rr=`Pérdida (${(wof*100).toFixed(2)}%)`;rb='red';}
+    }else{rr=wof<barrier?'Cupón diferido':'Cupón cobrado';rb=wof<barrier?'amber':'gray';}
+    rows.push({obs,label:mkl(keys[si+off]),perfs:perfs.map(p=>(p*100).toFixed(2)),wof:(wof*100).toFixed(2),rr,rb});
+  }
+  if(!result)return null;
+  const total=(result.capital+result.coupons-offer)/offer;
+  const ann=result.months>0?Math.pow(1+total,12/result.months)-1:0;
+  const cL=[mkl(keys[si])],cW=[100],cP=monthlies.map(()=>[100]);
+  for(let obs=1;obs<=endObs;obs++){
+    const off=obs*freqM;if(si+off>=keys.length)break;
+    const perfs=monthlies.map((_,i)=>rel(i,off));if(perfs.some(p=>p===null))break;
+    cL.push(mkl(keys[si+off]));cW.push(+(Math.min(...perfs)*100).toFixed(2));
+    perfs.forEach((p,i)=>cP[i].push(+(p*100).toFixed(2)));
+  }
+  return {result,rows,total,ann,endObs,coupons,cL,cW,cP};
+}
+
+// ─── MAIN ─────────────────────────────────────────────────────────────────
+async function startBacktest(){
+  if(selectedSymbols.length===0){alert('Agregá al menos un subyacente');return;}
+  if(selectedSymbols.length<numTickers){alert(`Faltan ${numTickers-selectedSymbols.length} subyacentes`);return;}
+  const btn=document.getElementById('runBtn');
+  btn.disabled=true;btn.textContent='⟳ DESCARGANDO...';
+  const syms=selectedSymbols.slice(0,numTickers);
+  const fetchRows=syms.map(t=>`<div class="fetch-row"><span class="fetch-sym">${t.sym}</span><span class="fetch-st" id="fs-${t.sym}">descargando...</span></div>`).join('');
+  document.getElementById('contentArea').innerHTML=`<div class="loading-overlay"><div class="spinner"></div><div class="loading-text">Descargando precios reales · yfinance</div><div class="fetch-rows">${fetchRows}</div></div>`;
+  const monthlies=[];
+  for(const t of syms){
+    const el=document.getElementById(`fs-${t.sym}`);
+    try{
+      const m=await fetchPrices(t.sym);
+      monthlies.push(m);
+      if(el){el.textContent=`✓ ${Object.keys(m).length} meses`;el.className='fetch-st ok';}
+      renderTickers();
+    }catch(e){
+      if(el){el.textContent=`Error: ${e.message}`;el.className='fetch-st err';}
+      btn.disabled=false;btn.textContent='▶ EJECUTAR BACKTESTING';return;
+    }
+  }
+  btn.disabled=false;btn.textContent='▶ EJECUTAR BACKTESTING';
+  buildResults(syms,monthlies);
+}
+
+function buildResults(syms,monthlies){
+  const freqM=parseInt(document.getElementById('obsFreq').value);
+  const barrier=parseFloat(document.getElementById('barrierPct').value);
+  const acTrig=parseFloat(document.getElementById('autocallPct').value);
+  const offerPct=parseFloat(document.getElementById('offerPrice').value);
+  const coupon=parseFloat(document.getElementById('couponPA').value);
+  const withMem=document.getElementById('couponType').value==='memory';
+  const freqLabel={1:'mensual',3:'trimestral',4:'cuatrimestral',6:'semestral'}[freqM]||`${freqM}m`;
+  const keys=sharedKeys(monthlies);
+  const maxStart=keys.length-maturityMonths;
+  if(maxStart<=0){document.getElementById('contentArea').innerHTML='<div class="empty"><p>Datos insuficientes para el vencimiento configurado.</p></div>';return;}
+  const windows=[];
+  for(let s=0;s<=maxStart;s++){const eK=keys[Math.min(s+maturityMonths,keys.length-1)];windows.push({si:s,label:`${mkl(keys[s])} → ${mkl(eK)}`});}
+  let acN=0,okN=0,lossN=0,acMo=[],allP=[],lossP=[];
+  for(const w of windows){
+    const d=simulate(w.si,monthlies,keys,maturityMonths,freqM,barrier,acTrig,offerPct,coupon,withMem);
+    if(!d)continue;
+    const pay=(d.result.capital+d.result.coupons)/(offerPct/100)*100;
+    allP.push(pay);
+    if(d.result.type==='autocall'){acN++;acMo.push(d.result.months);}
+    else if(d.result.type==='maturity_ok')okN++;
+    else{lossN++;lossP.push(pay);}
+  }
+  const abv100=allP.filter(p=>p>=100),ex100=allP.filter(p=>Math.abs(p-100)<0.5);
+  const N=allP.length,avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null;
+  const pct=n=>N>0?(n/N*100).toFixed(2)+'%':'—',fmt=v=>v!=null?v.toFixed(2)+'%':'—';
+  const avgLife=acN>0?avg(acMo).toFixed(1)+'m':`${maturityMonths}m`;
+  const dataFrom=mkl(keys[0]),dataTo=mkl(keys[keys.length-1]);
+  const perfHdrs=syms.map((t,i)=>`<th style="color:${COLORS[i]}">${t.sym}</th>`).join('');
+
+  document.getElementById('contentArea').innerHTML=`
+  <div class="config-bar">
+    <div class="cfg-tag">Subyacentes: <span>${syms.map(t=>t.sym).join(' / ')}</span></div>
+    <div class="cfg-tag">Vencimiento: <span>${maturityMonths}m</span></div>
+    <div class="cfg-tag">Obs.: <span>${freqLabel}</span></div>
+    <div class="cfg-tag">Barrera: <span>${barrier}%</span></div>
+    <div class="cfg-tag">Autocall: <span>${acTrig}%</span></div>
+    <div class="cfg-tag">Cupón: <span>${coupon}% p.a. ${withMem?'c/mem':'s/mem'}</span></div>
+    <div class="cfg-tag">Oferta: <span>${offerPct}%</span></div>
+    <div class="cfg-tag data-tag">yfinance · ${dataFrom} – ${dataTo} · ${N} ventanas</div>
+  </div>
+  <div class="dl-bar">
+    <button class="dl-btn pdf" onclick="downloadPDF()">↓ Descargar PDF</button>
+    <button class="dl-btn csv" onclick="downloadCSV()">↓ Descargar CSV</button>
+  </div>
+  <div class="bt-report">
+    <div class="bt-header"><span class="bt-title">Backtest</span><span class="bt-sub">${N} ventanas rolling · precios reales · ${dataFrom} – ${dataTo}</span></div>
+    <div class="bt-row"><span class="bt-label">% de tiempo con Autocall</span><span class="bt-val g">${pct(acN)}</span></div>
+    <div class="bt-row"><span class="bt-label">Vida promedio del producto</span><span class="bt-val">${avgLife}</span></div>
+    <div class="bt-row bt-sep"><span class="bt-label">% de pagos totales &lt; 100%</span><span class="bt-val ${lossN>0?'r':'mu'}">${pct(lossN)}</span></div>
+    <div class="bt-row"><span class="bt-label">Pago promedio cuando pago total &lt; 100%</span><span class="bt-val r">${fmt(avg(lossP))}</span></div>
+    <div class="bt-row bt-sep"><span class="bt-label">Pago mínimo cuando pago total &lt; 100%</span><span class="bt-val r">${lossP.length?Math.min(...lossP).toFixed(2)+'%':'—'}</span></div>
+    <div class="bt-row"><span class="bt-label">% de pagos totales ≥ 100%</span><span class="bt-val g">${pct(abv100.length)}</span></div>
+    <div class="bt-row"><span class="bt-label">Pago promedio cuando pago total ≥ 100%</span><span class="bt-val g">${fmt(avg(abv100))}</span></div>
+    <div class="bt-row bt-sep"><span class="bt-label">Pago máximo cuando pago total ≥ 100%</span><span class="bt-val g">${abv100.length?Math.max(...abv100).toFixed(2)+'%':'—'}</span></div>
+    <div class="bt-row"><span class="bt-label">% de pagos totales = 100% (exacto ±0.5%)</span><span class="bt-val mu">${pct(ex100.length)}</span></div>
+    <div class="bt-row bt-total"><span class="bt-label">Pago total promedio general</span><span class="bt-val a">${fmt(avg(allP))}</span></div>
+  </div>
+  <div class="metrics">
+    <div class="metric"><div class="lbl">Resultado final</div><div class="val cg" id="mResult">—</div><div class="sub" id="mResultSub"></div></div>
+    <div class="metric"><div class="lbl">Retorno total</div><div class="val cb" id="mTotal">—</div><div class="sub">sobre precio oferta</div></div>
+    <div class="metric"><div class="lbl">Retorno anualizado</div><div class="val cg" id="mAnn">—</div><div class="sub">TIR efectiva</div></div>
+    <div class="metric"><div class="lbl">Cupones cobrados</div><div class="val ca" id="mCoupons">—</div><div class="sub" id="mCouponsSub"></div></div>
+  </div>
+  <div class="ctrl" style="margin-bottom:16px;">
+    <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Ventana de inicio (drill-down)</label>
+    <select id="selWindow" style="width:100%;padding:7px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:5px;color:var(--text);font-family:'IBM Plex Mono',monospace;font-size:12px;outline:none;">
+      ${windows.map((w,i)=>`<option value="${i}">${w.label}</option>`).join('')}
+    </select>
+  </div>
+  <div class="chart-card">
+    <div class="chart-header">
+      <div class="sec">Evolución del worst-of vs. barrera ${barrier}%</div>
+      <div class="legend">
+        ${syms.map((t,i)=>`<div class="legend-item"><div class="leg-line" style="background:${COLORS[i]}"></div>${t.sym}</div>`).join('')}
+        <div class="legend-item"><div class="leg-line" style="background:#f87171;height:3px"></div>Worst-of</div>
+        <div class="legend-item"><div class="leg-line" style="border-top:2px dashed #f87171;background:none;width:14px;height:0"></div>&nbsp;Barrera</div>
+      </div>
+    </div>
+    <div class="chart-wrap"><canvas id="chartLine"></canvas></div>
+  </div>
+  <div class="table-card">
+    <div class="sec" style="margin-bottom:10px;">Observaciones — ${freqLabel} · precios reales</div>
+    <table><thead><tr><th>#</th><th>Fecha</th>${perfHdrs}<th>Worst-of</th><th>Resultado</th></tr></thead><tbody id="tBody"></tbody></table>
+  </div>
+  <p class="footnote">Precios de cierre ajustados por dividendos y splits descargados con yfinance (Yahoo Finance). ${N} ventanas rolling con inicio mensual. Barrera europea aplicada solo al vencimiento. Rentabilidades pasadas no garantizan resultados futuros.</p>`;
+
+  chart=null;
+  function renderWindow(idx){
+    const d=simulate(windows[idx].si,monthlies,keys,maturityMonths,freqM,barrier,acTrig,offerPct,coupon,withMem);
+    if(!d){document.getElementById('tBody').innerHTML='<tr><td colspan="99" style="color:var(--muted);padding:10px">Sin datos para esta ventana.</td></tr>';return;}
+    const r=d.result;
+    let rt,rc;
+    if(r.type==='autocall'){rt=`Autocall T+${r.months}m`;rc='cg';}
+    else if(r.type==='maturity_ok'){rt='Vencimiento OK';rc='cb';}
+    else{rt='Pérdida capital';rc='cr';}
+    document.getElementById('mResult').textContent=rt;document.getElementById('mResult').className='val '+rc;
+    document.getElementById('mResultSub').textContent=r.type==='maturity_loss'?`Worst-of: ${(r.capital*100).toFixed(2)}%`:r.type==='autocall'?`Obs. ${Math.round(r.months/freqM)}/${Math.floor(maturityMonths/freqM)}`:'Capital recuperado';
+    const tot=document.getElementById('mTotal');tot.textContent=(d.total>=0?'+':'')+(d.total*100).toFixed(2)+'%';tot.className='val '+(d.total>=0?'cg':'cr');
+    const ann=document.getElementById('mAnn');ann.textContent=(d.ann>=0?'+':'')+(d.ann*100).toFixed(2)+'%';ann.className='val '+(d.ann>=0?'cg':'cr');
+    document.getElementById('mCoupons').textContent=(d.coupons*100).toFixed(2)+'%';
+    document.getElementById('mCouponsSub').textContent=`${d.rows.filter(r=>r.rb==='gray'||r.rb==='green').length}/${d.endObs} obs. pagadas`;
+    const ds=syms.map((t,i)=>({label:t.sym,data:d.cP[i],borderColor:COLORS[i],borderWidth:1.5,pointRadius:3,pointBackgroundColor:COLORS[i],tension:0.3,fill:false}));
+    ds.push({label:'Worst-of',data:d.cW,borderColor:'#f87171',borderWidth:2.5,pointRadius:3,pointBackgroundColor:'#f87171',tension:0.3,fill:false});
+    ds.push({label:'Barrera',data:Array(d.cL.length).fill(barrier),borderColor:'#f87171',borderWidth:1,borderDash:[6,4],pointRadius:0,fill:false});
+    if(chart)chart.destroy();
+    chart=new Chart(document.getElementById('chartLine'),{type:'line',data:{labels:d.cL,datasets:ds},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,backgroundColor:'#1a1e28',borderColor:'rgba(255,255,255,.1)',borderWidth:1,titleColor:'#9ca3af',bodyColor:'#e8eaf0',titleFont:{family:'IBM Plex Mono',size:11},bodyFont:{family:'IBM Plex Mono',size:11},callbacks:{label:c=>`${c.dataset.label}: ${c.parsed.y.toFixed(2)}%`}}},scales:{x:{ticks:{font:{family:'IBM Plex Mono',size:10},color:'#6b7280',maxRotation:45},grid:{color:'rgba(255,255,255,.04)'},border:{color:'rgba(255,255,255,.07)'}},y:{min:Math.max(35,barrier-20),ticks:{callback:v=>v+'%',font:{family:'IBM Plex Mono',size:10},color:'#6b7280'},grid:{color:'rgba(255,255,255,.04)'},border:{color:'rgba(255,255,255,.07)'}}}}});
+    const tb=document.getElementById('tBody');tb.innerHTML='';
+    d.rows.forEach(row=>{
+      const low=parseFloat(row.wof)<barrier;const tr=document.createElement('tr');
+      const pc=row.perfs.map((p,i)=>`<td style="color:${COLORS[i]}">${p}%</td>`).join('');
+      tr.innerHTML=`<td style="color:var(--muted)">${row.obs}</td><td>${row.label}</td>${pc}<td style="color:${low?'#f87171':'#e8eaf0'};font-weight:500">${row.wof}%</td><td><span class="badge bg-${row.rb}">${row.rr}</span></td>`;
+      tb.appendChild(tr);
+    });
+  }
+  document.getElementById('selWindow').addEventListener('change',function(){renderWindow(parseInt(this.value));});
+  renderWindow(0);
+}
+renderTickers();
+
+// ─── DOWNLOAD FUNCTIONS ───────────────────────────────────────────────────
+function downloadCSV(){
+  const rows=[['Métrica','Valor']];
+  document.querySelectorAll('.bt-row').forEach(row=>{
+    const label=row.querySelector('.bt-label');
+    const val=row.querySelector('.bt-val');
+    if(label&&val) rows.push([label.textContent.trim(), val.textContent.trim()]);
+  });
+  // Add config
+  rows.unshift(['','']);
+  rows.unshift(['Fecha',''+new Date().toLocaleDateString('es-AR')]);
+  document.querySelectorAll('.cfg-tag').forEach(t=>{
+    const txt=t.textContent.trim();
+    if(txt) rows.unshift([txt,'']);
+  });
+  rows.unshift(['BACKTESTING AUTOCALL — INFORME','']);
+  const csv=rows.map(r=>r.map(c=>`"${c.replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`backtest_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
+
+function downloadPDF(){
+  const date=new Date().toLocaleDateString('es-AR');
+  const config=[...document.querySelectorAll('.cfg-tag')].map(t=>t.textContent.trim()).join(' · ');
+  const btRows=[...document.querySelectorAll('.bt-row')].map(row=>{
+    const label=row.querySelector('.bt-label');
+    const val=row.querySelector('.bt-val');
+    if(!label||!val) return '';
+    const color=val.classList.contains('g')?'#4ade80':val.classList.contains('r')?'#f87171':val.classList.contains('a')?'#fbbf24':'#e8eaf0';
+    return `<tr><td style="padding:8px 12px;border-bottom:1px solid #2a2e3a;font-size:13px;color:#e8eaf0">${label.textContent}</td><td style="padding:8px 12px;border-bottom:1px solid #2a2e3a;font-family:monospace;font-size:13px;font-weight:600;color:${color};text-align:right">${val.textContent}</td></tr>`;
+  }).join('');
+
+  // Get metrics
+  const mResult=document.getElementById('mResult');
+  const mTotal=document.getElementById('mTotal');
+  const mAnn=document.getElementById('mAnn');
+  const mCoupons=document.getElementById('mCoupons');
+
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <style>
+    body{margin:0;padding:32px;background:#0d0f14;color:#e8eaf0;font-family:'IBM Plex Sans',Arial,sans-serif;}
+    .header{border-bottom:2px solid #1a1e28;padding-bottom:20px;margin-bottom:24px;}
+    .title{font-family:monospace;font-size:18px;font-weight:600;letter-spacing:.06em;color:#e8eaf0;}
+    .subtitle{font-size:12px;color:#6b7280;margin-top:4px;}
+    .config{background:#13161e;border:1px solid #1a1e28;border-radius:6px;padding:12px 16px;margin-bottom:24px;font-size:11px;font-family:monospace;color:#6b7280;line-height:1.8;}
+    .section{font-family:monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#6b7280;margin-bottom:8px;}
+    .bt-table{width:100%;border-collapse:collapse;background:#13161e;border:1px solid #1a1e28;border-radius:8px;overflow:hidden;margin-bottom:24px;}
+    .bt-table thead tr{background:#1a1e28;}
+    .bt-table thead th{padding:10px 12px;text-align:left;font-family:monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#6b7280;}
+    .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:24px;}
+    .metric{background:#13161e;border:1px solid #1a1e28;border-radius:6px;padding:14px;}
+    .metric .lbl{font-size:10px;color:#6b7280;font-family:monospace;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px;}
+    .metric .val{font-family:monospace;font-size:20px;font-weight:600;}
+    .footer{margin-top:32px;padding-top:16px;border-top:1px solid #1a1e28;font-size:10px;color:#4b5563;font-family:monospace;}
+    @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
+  </style></head><body>
+  <div class="header">
+    <div class="title">BACKTESTING — AUTOCALL CONFIGURABLE</div>
+    <div class="subtitle">Informe generado el ${date} · Precios reales via yfinance (Yahoo Finance)</div>
+  </div>
+  <div class="config">${config}</div>
+  <div class="section" style="margin-bottom:10px">Resumen estadístico</div>
+  <table class="bt-table">
+    <thead><tr><th>Métrica</th><th style="text-align:right">Valor</th></tr></thead>
+    <tbody>${btRows}</tbody>
+  </table>
+  <div class="section" style="margin-bottom:10px">Ventana seleccionada</div>
+  <div class="metrics">
+    <div class="metric"><div class="lbl">Resultado final</div><div class="val" style="color:${mResult?mResult.classList.contains('cg')?'#4ade80':mResult.classList.contains('cr')?'#f87171':'#60a5fa':'#e8eaf0'}">${mResult?mResult.textContent:'—'}</div></div>
+    <div class="metric"><div class="lbl">Retorno total</div><div class="val" style="color:${mTotal&&mTotal.textContent.startsWith('+')?'#4ade80':'#f87171'}">${mTotal?mTotal.textContent:'—'}</div></div>
+    <div class="metric"><div class="lbl">Retorno anualizado</div><div class="val" style="color:${mAnn&&mAnn.textContent.startsWith('+')?'#4ade80':'#f87171'}">${mAnn?mAnn.textContent:'—'}</div></div>
+    <div class="metric"><div class="lbl">Cupones cobrados</div><div class="val" style="color:#fbbf24">${mCoupons?mCoupons.textContent:'—'}</div></div>
+  </div>
+  <div class="footer">Rentabilidades pasadas no garantizan resultados futuros. No constituye asesoramiento de inversión. · CABSA International</div>
+  <script>window.onload=()=>{window.print();}<\/script>
+  </body></html>`;
+
+  const w=window.open('','_blank');
+  w.document.write(html);
+  w.document.close();
+}
+</script>
+</body>
+</html>
