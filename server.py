@@ -45,6 +45,27 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except Exception as e:
                 self._json({'error': str(e)}, 500)
 
+        elif path == '/prices_daily':
+            sym = params.get('sym', [''])[0].upper()
+            if not sym:
+                self._json({'error': 'sym requerido'}, 400); return
+            try:
+                print(f"  Descargando diario {sym}...")
+                ticker = yf.Ticker(sym)
+                hist = ticker.history(period='10y', interval='1d', auto_adjust=True)
+                if hist.empty:
+                    self._json({'error': f'Sin datos diarios para {sym}'}, 404); return
+                daily = {}
+                for ts, row in hist.iterrows():
+                    key = ts.strftime('%Y-%m-%d')
+                    price = float(row['Close'])
+                    if price > 0:
+                        daily[key] = round(price, 4)
+                print(f"  {sym}: {len(daily)} días OK")
+                self._json({'sym': sym, 'daily': daily})
+            except Exception as e:
+                self._json({'error': str(e)}, 500)
+
         elif path.endswith('.html') or path == '/':
             filename = path.lstrip('/') or 'backtesting_python.html'
             filepath = os.path.join(BASE_DIR, filename)
