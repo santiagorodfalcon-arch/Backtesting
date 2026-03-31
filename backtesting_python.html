@@ -164,7 +164,8 @@ tr:hover td{background:rgba(255,255,255,.02);}
     <div class="s-title">Estructura</div>
     <div class="ctrl">
       <label>Vencimiento</label>
-      <div class="radio-group">
+      <div class="radio-group" style="flex-wrap:wrap;gap:4px;">
+        <div class="radio-btn" data-val="12" onclick="setMonths(12)">12m</div>
         <div class="radio-btn" data-val="18" onclick="setMonths(18)">18m</div>
         <div class="radio-btn active" data-val="24" onclick="setMonths(24)">24m</div>
         <div class="radio-btn" data-val="36" onclick="setMonths(36)">36m</div>
@@ -180,12 +181,47 @@ tr:hover td{background:rgba(255,255,255,.02);}
       </select>
     </div>
     <div class="ctrl">
-      <label>Barrera (%)</label>
-      <input type="number" id="barrierPct" value="70" min="30" max="99" step="1">
-    </div>
-    <div class="ctrl">
       <label>Autocall trigger (%)</label>
       <input type="number" id="autocallPct" value="100" min="50" max="120" step="1">
+    </div>
+    <div class="ctrl">
+      <label>Stepdown autocall (% por obs.)</label>
+      <input type="number" id="stepdown" value="0" min="0" max="20" step="0.5">
+    </div>
+    <div class="ctrl">
+      <label>First call — observación #</label>
+      <select id="firstCall">
+        <option value="1">1 — sin non-call</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+        <option value="6">6</option>
+        <option value="7">7</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="s-section">
+    <div class="s-title">Barrera</div>
+    <div class="ctrl">
+      <label>Tipo de barrera</label>
+      <select id="barrierType" onchange="toggleBarrierInputs()">
+        <option value="european">Europea</option>
+        <option value="none">Ninguna</option>
+      </select>
+    </div>
+    <div class="ctrl">
+      <label>Barrera cupón (%)</label>
+      <input type="number" id="couponBarrierPct" value="70" min="30" max="100" step="1">
+    </div>
+    <div class="ctrl" id="capitalBarrierCtrl">
+      <label>Barrera capital (%)</label>
+      <input type="number" id="capitalBarrierPct" value="70" min="30" max="100" step="1">
+    </div>
+    <div class="ctrl" id="putStrikeCtrl">
+      <label>Put strike / Low strike (%)</label>
+      <input type="number" id="putStrikePct" value="0" min="0" max="90" step="1" placeholder="0 = sin put strike">
     </div>
   </div>
 
@@ -270,6 +306,11 @@ function setMonths(m){
   maturityMonths=m;
   document.querySelectorAll('.radio-btn').forEach(b=>b.classList.toggle('active',parseInt(b.dataset.val)===m));
 }
+function toggleBarrierInputs(){
+  const isEu=document.getElementById('barrierType').value==='european';
+  document.getElementById('capitalBarrierCtrl').style.display=isEu?'':'none';
+  document.getElementById('putStrikeCtrl').style.display=isEu?'':'none';
+}
 
 // ─── TICKER SEARCH ────────────────────────────────────────────────────────
 const searchInput=document.getElementById('tickerSearch');
@@ -325,8 +366,8 @@ function mkl(key){const[y,m]=key.split('-');return `${'EneFebrMarAbrMayJunJulAgo
 function sharedKeys(monthlies){let keys=Object.keys(monthlies[0]).filter(k=>k>='2010-01').sort();for(let i=1;i<monthlies.length;i++){const s=new Set(Object.keys(monthlies[i]));keys=keys.filter(k=>s.has(k));}return keys;}
 function addMonthsToDate(dateStr,months){const d=new Date(dateStr+'T00:00:00Z');const m=d.getUTCMonth()+months;const y=d.getUTCFullYear()+Math.floor(m/12);const mo=((m%12)+12)%12;const day=d.getUTCDate();const maxDay=new Date(Date.UTC(y,mo+1,0)).getUTCDate();return `${y}-${String(mo+1).padStart(2,'0')}-${String(Math.min(day,maxDay)).padStart(2,'0')}`;}
 function findNearestSharedKey(target,sharedSet){if(sharedSet.has(target))return target;for(let i=1;i<=7;i++){const d1=new Date(target+'T00:00:00Z');d1.setUTCDate(d1.getUTCDate()+i);const k1=d1.toISOString().slice(0,10);if(sharedSet.has(k1))return k1;const d2=new Date(target+'T00:00:00Z');d2.setUTCDate(d2.getUTCDate()-i);const k2=d2.toISOString().slice(0,10);if(sharedSet.has(k2))return k2;}return null;}
-function buildDailyOverviewStats(dailies,matM,freqM,bar,ac,ofr,cpn,mem){
-  const barrier=bar/100,autocall=ac/100,offer=ofr/100,cpnObs=(cpn/100)*(freqM/12),totalObs=Math.floor(matM/freqM);
+function buildDailyOverviewStats(dailies,matM,freqM,cpnBar,capBar,barType,putStk,ac,stepDn,fc,ofr,cpn,mem){
+  const couponBarrier=cpnBar/100,capitalBarrier=capBar/100,autocall=ac/100,offer=ofr/100,cpnObs=(cpn/100)*(freqM/12),putStrike=putStk/100,totalObs=Math.floor(matM/freqM);
   const cutoff=new Date();cutoff.setFullYear(cutoff.getFullYear()-10);const cutoffStr=cutoff.toISOString().slice(0,10);
   let sharedDays=Object.keys(dailies[0]).filter(k=>k>=cutoffStr).sort();
   for(let i=1;i<dailies.length;i++){const s=new Set(Object.keys(dailies[i]));sharedDays=sharedDays.filter(k=>s.has(k));}
@@ -342,9 +383,13 @@ function buildDailyOverviewStats(dailies,matM,freqM,bar,ac,ofr,cpn,mem){
       const perfs=dailies.map((d,i)=>{const p=d[nk];return p&&p>0?p/base[i]:null;});
       if(perfs.some(p=>p===null)){valid=false;break;}
       const wof=+Math.min(...perfs).toFixed(5);
-      let ct=0;if(wof>=barrier){ct=mem?(1+memory)*cpnObs:cpnObs;coupons+=ct;memory=0;}else memory++;
-      if(wof>=autocall&&obs<totalObs){result={type:'autocall',capital:1,months:obs*freqM,coupons};break;}
-      if(obs===totalObs){if(wof>=barrier)result={type:'maturity_ok',capital:1,months:obs*freqM,coupons};else result={type:'maturity_loss',capital:wof,months:obs*freqM,coupons};}
+      let ct=0;if(wof>=couponBarrier){ct=mem?(1+memory)*cpnObs:cpnObs;coupons+=ct;memory=0;}else memory++;
+      const acTrig=autocall-(obs-1)*(stepDn/100);
+      if(obs>=fc&&wof>=acTrig&&obs<totalObs){result={type:'autocall',capital:1,months:obs*freqM,coupons};break;}
+      if(obs===totalObs){
+        if(barType==='none'||wof>=capitalBarrier)result={type:'maturity_ok',capital:1,months:obs*freqM,coupons};
+        else{const cap=putStrike>0?Math.max(wof,putStrike):wof;result={type:cap<1?'maturity_loss':'maturity_ok',capital:cap,months:obs*freqM,coupons};}
+      }
     }
     if(!valid||!result)continue;
     const pay=(result.capital+result.coupons)/offer*100;
@@ -357,8 +402,8 @@ function buildDailyOverviewStats(dailies,matM,freqM,bar,ac,ofr,cpn,mem){
 }
 
 // ─── SIMULATE ─────────────────────────────────────────────────────────────
-function simulate(si,monthlies,keys,matM,freqM,bar,ac,ofr,cpn,mem){
-  const barrier=bar/100,autocall=ac/100,offer=ofr/100,cpnObs=(cpn/100)*(freqM/12);
+function simulate(si,monthlies,keys,matM,freqM,cpnBar,capBar,barType,putStk,ac,stepDn,fc,ofr,cpn,mem){
+  const couponBarrier=cpnBar/100,capitalBarrier=capBar/100,autocall=ac/100,offer=ofr/100,cpnObs=(cpn/100)*(freqM/12),putStrike=putStk/100;
   const totalObs=Math.floor(matM/freqM);
   const base=monthlies.map(m=>m[keys[si]]);
   if(base.some(p=>!p||p<=0)) return null;
@@ -369,16 +414,21 @@ function simulate(si,monthlies,keys,matM,freqM,bar,ac,ofr,cpn,mem){
     const perfs=monthlies.map((_,i)=>rel(i,off));if(perfs.some(p=>p===null))break;
     const wof=+Math.min(...perfs).toFixed(5);
     let ct=0,rr='',rb='';
-    if(wof>=barrier){ct=mem?(1+memory)*cpnObs:cpnObs;coupons+=ct;memory=0;}else memory++;
-    if(wof>=autocall&&obs<totalObs){
+    if(wof>=couponBarrier){ct=mem?(1+memory)*cpnObs:cpnObs;coupons+=ct;memory=0;}else memory++;
+    const acTrig=autocall-(obs-1)*(stepDn/100);
+    if(obs>=fc&&wof>=acTrig&&obs<totalObs){
       endObs=obs;result={type:'autocall',capital:1,months:obs*freqM,coupons};rr='AUTOCALL';rb='green';
       rows.push({obs,label:mkl(keys[si+off]),perfs:perfs.map(p=>(p*100).toFixed(2)),wof:(wof*100).toFixed(2),rr,rb});break;
     }
     if(obs===totalObs){
       endObs=obs;
-      if(wof>=barrier){result={type:'maturity_ok',capital:1,months:obs*freqM,coupons};rr='Vencimiento OK';rb='blue';}
-      else{result={type:'maturity_loss',capital:wof,months:obs*freqM,coupons};rr=`Pérdida (${(wof*100).toFixed(2)}%)`;rb='red';}
-    }else{rr=wof<barrier?'Cupón diferido':'Cupón cobrado';rb=wof<barrier?'amber':'gray';}
+      if(barType==='none'||wof>=capitalBarrier){
+        result={type:'maturity_ok',capital:1,months:obs*freqM,coupons};rr='Vencimiento OK';rb='blue';
+      }else{
+        const cap=putStrike>0?Math.max(wof,putStrike):wof;
+        result={type:'maturity_loss',capital:cap,months:obs*freqM,coupons};rr=`Pérdida (${(cap*100).toFixed(2)}%)`;rb='red';
+      }
+    }else{rr=wof<couponBarrier?'Cupón diferido':'Cupón cobrado';rb=wof<couponBarrier?'amber':'gray';}
     rows.push({obs,label:mkl(keys[si+off]),perfs:perfs.map(p=>(p*100).toFixed(2)),wof:(wof*100).toFixed(2),rr,rb});
   }
   if(!result)return null;
@@ -425,8 +475,13 @@ async function startBacktest(){
 
 function buildResults(syms,monthlies,dailies){
   const freqM=parseInt(document.getElementById('obsFreq').value);
-  const barrier=parseFloat(document.getElementById('barrierPct').value);
+  const couponBarrier=parseFloat(document.getElementById('couponBarrierPct').value);
+  const barrierType=document.getElementById('barrierType').value;
+  const capitalBarrier=barrierType==='none'?100:parseFloat(document.getElementById('capitalBarrierPct').value);
+  const putStrikePct=parseFloat(document.getElementById('putStrikePct').value)||0;
   const acTrig=parseFloat(document.getElementById('autocallPct').value);
+  const stepdown=parseFloat(document.getElementById('stepdown').value)||0;
+  const firstCall=parseInt(document.getElementById('firstCall').value);
   const offerPct=parseFloat(document.getElementById('offerPrice').value);
   const coupon=parseFloat(document.getElementById('couponPA').value);
   const withMem=document.getElementById('couponType').value==='memory';
@@ -436,7 +491,7 @@ function buildResults(syms,monthlies,dailies){
   if(maxStart<=0){document.getElementById('contentArea').innerHTML='<div class="empty"><p>Datos insuficientes para el vencimiento configurado.</p></div>';return;}
   const windows=[];
   for(let s=0;s<=maxStart;s++){const eK=keys[Math.min(s+maturityMonths,keys.length-1)];windows.push({si:s,label:`${mkl(keys[s])} → ${mkl(eK)}`});}
-  const ov=buildDailyOverviewStats(dailies,maturityMonths,freqM,barrier,acTrig,offerPct,coupon,withMem);
+  const ov=buildDailyOverviewStats(dailies,maturityMonths,freqM,couponBarrier,capitalBarrier,barrierType,putStrikePct,acTrig,stepdown,firstCall,offerPct,coupon,withMem);
   const {acN,okN,lossN,acMo,allP,lossP}=ov;
   const abv100=allP.filter(p=>p>=100),ex100=allP.filter(p=>Math.abs(p-100)<0.5);
   const N=ov.N,avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null;
@@ -451,8 +506,10 @@ function buildResults(syms,monthlies,dailies){
     <div class="cfg-tag">Subyacentes: <span>${syms.map(t=>t.sym).join(' / ')}</span></div>
     <div class="cfg-tag">Vencimiento: <span>${maturityMonths}m</span></div>
     <div class="cfg-tag">Obs.: <span>${freqLabel}</span></div>
-    <div class="cfg-tag">Barrera: <span>${barrier}%</span></div>
-    <div class="cfg-tag">Autocall: <span>${acTrig}%</span></div>
+    <div class="cfg-tag">Bar. cupón: <span>${couponBarrier}%</span></div>
+    ${barrierType==='european'?`<div class="cfg-tag">Bar. capital: <span>${capitalBarrier}%${putStrikePct>0?' / low '+putStrikePct+'%':''}</span></div>`:'<div class="cfg-tag">Bar. capital: <span>—</span></div>'}
+    <div class="cfg-tag">Autocall: <span>${acTrig}%${stepdown>0?' ↓'+stepdown+'/obs':''}</span></div>
+    ${firstCall>1?`<div class="cfg-tag">First call: <span>obs. ${firstCall}</span></div>`:''}
     <div class="cfg-tag">Cupón: <span>${coupon}% p.a. ${withMem?'c/mem':'s/mem'}</span></div>
     <div class="cfg-tag">Oferta: <span>${offerPct}%</span></div>
     <div class="cfg-tag data-tag">yfinance · ${dailyFrom} – ${dailyTo} · ${N} emisiones diarias</div>
@@ -488,11 +545,12 @@ function buildResults(syms,monthlies,dailies){
   </div>
   <div class="chart-card">
     <div class="chart-header">
-      <div class="sec">Evolución del worst-of vs. barrera ${barrier}%</div>
+      <div class="sec">Evolución del worst-of vs. barreras</div>
       <div class="legend">
         ${syms.map((t,i)=>`<div class="legend-item"><div class="leg-line" style="background:${COLORS[i]}"></div>${t.sym}</div>`).join('')}
         <div class="legend-item"><div class="leg-line" style="background:#f87171;height:3px"></div>Worst-of</div>
-        <div class="legend-item"><div class="leg-line" style="border-top:2px dashed #f87171;background:none;width:14px;height:0"></div>&nbsp;Barrera</div>
+        <div class="legend-item"><div class="leg-line" style="border-top:2px dashed #fbbf24;background:none;width:14px;height:0"></div>&nbsp;Bar. cupón</div>
+        ${barrierType==='european'&&capitalBarrier!==couponBarrier?'<div class="legend-item"><div class="leg-line" style="border-top:2px dashed #f87171;background:none;width:14px;height:0"></div>&nbsp;Bar. capital</div>':''}
       </div>
     </div>
     <div class="chart-wrap"><canvas id="chartLine"></canvas></div>
@@ -505,7 +563,7 @@ function buildResults(syms,monthlies,dailies){
 
   chart=null;
   function renderWindow(idx){
-    const d=simulate(windows[idx].si,monthlies,keys,maturityMonths,freqM,barrier,acTrig,offerPct,coupon,withMem);
+    const d=simulate(windows[idx].si,monthlies,keys,maturityMonths,freqM,couponBarrier,capitalBarrier,barrierType,putStrikePct,acTrig,stepdown,firstCall,offerPct,coupon,withMem);
     if(!d){document.getElementById('tBody').innerHTML='<tr><td colspan="99" style="color:var(--muted);padding:10px">Sin datos para esta ventana.</td></tr>';return;}
     const r=d.result;
     let rt,rc;
@@ -520,9 +578,10 @@ function buildResults(syms,monthlies,dailies){
     document.getElementById('mCouponsSub').textContent=`${d.rows.filter(r=>r.rb==='gray'||r.rb==='green').length}/${d.endObs} obs. pagadas`;
     const ds=syms.map((t,i)=>({label:t.sym,data:d.cP[i],borderColor:COLORS[i],borderWidth:1.5,pointRadius:3,pointBackgroundColor:COLORS[i],tension:0.3,fill:false}));
     ds.push({label:'Worst-of',data:d.cW,borderColor:'#f87171',borderWidth:2.5,pointRadius:3,pointBackgroundColor:'#f87171',tension:0.3,fill:false});
-    ds.push({label:'Barrera',data:Array(d.cL.length).fill(barrier),borderColor:'#f87171',borderWidth:1,borderDash:[6,4],pointRadius:0,fill:false});
+    ds.push({label:`Bar.cupón`,data:Array(d.cL.length).fill(couponBarrier),borderColor:'#fbbf24',borderWidth:1.5,borderDash:[5,3],pointRadius:0,fill:false});
+    if(barrierType==='european'&&capitalBarrier!==couponBarrier)ds.push({label:`Bar.capital`,data:Array(d.cL.length).fill(capitalBarrier),borderColor:'#f87171',borderWidth:1.5,borderDash:[6,4],pointRadius:0,fill:false});
     if(chart)chart.destroy();
-    chart=new Chart(document.getElementById('chartLine'),{type:'line',data:{labels:d.cL,datasets:ds},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,backgroundColor:'#1a1e28',borderColor:'rgba(255,255,255,.1)',borderWidth:1,titleColor:'#9ca3af',bodyColor:'#e8eaf0',titleFont:{family:'IBM Plex Mono',size:11},bodyFont:{family:'IBM Plex Mono',size:11},callbacks:{label:c=>`${c.dataset.label}: ${c.parsed.y.toFixed(2)}%`}}},scales:{x:{ticks:{font:{family:'IBM Plex Mono',size:10},color:'#6b7280',maxRotation:45},grid:{color:'rgba(255,255,255,.04)'},border:{color:'rgba(255,255,255,.07)'}},y:{min:Math.max(35,barrier-20),ticks:{callback:v=>v+'%',font:{family:'IBM Plex Mono',size:10},color:'#6b7280'},grid:{color:'rgba(255,255,255,.04)'},border:{color:'rgba(255,255,255,.07)'}}}}});
+    chart=new Chart(document.getElementById('chartLine'),{type:'line',data:{labels:d.cL,datasets:ds},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,backgroundColor:'#1a1e28',borderColor:'rgba(255,255,255,.1)',borderWidth:1,titleColor:'#9ca3af',bodyColor:'#e8eaf0',titleFont:{family:'IBM Plex Mono',size:11},bodyFont:{family:'IBM Plex Mono',size:11},callbacks:{label:c=>`${c.dataset.label}: ${c.parsed.y.toFixed(2)}%`}}},scales:{x:{ticks:{font:{family:'IBM Plex Mono',size:10},color:'#6b7280',maxRotation:45},grid:{color:'rgba(255,255,255,.04)'},border:{color:'rgba(255,255,255,.07)'}},y:{min:Math.max(20,Math.min(couponBarrier,barrierType==='european'?capitalBarrier:couponBarrier)-(putStrikePct>0?putStrikePct+5:25)),ticks:{callback:v=>v+'%',font:{family:'IBM Plex Mono',size:10},color:'#6b7280'},grid:{color:'rgba(255,255,255,.04)'},border:{color:'rgba(255,255,255,.07)'}}}}});
     const tb=document.getElementById('tBody');tb.innerHTML='';
     d.rows.forEach(row=>{
       const low=parseFloat(row.wof)<barrier;const tr=document.createElement('tr');
