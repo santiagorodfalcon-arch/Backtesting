@@ -309,7 +309,6 @@ function setMonths(m){
 function toggleBarrierInputs(){
   const isEu=document.getElementById('barrierType').value==='european';
   document.getElementById('capitalBarrierCtrl').style.display=isEu?'':'none';
-  document.getElementById('putStrikeCtrl').style.display=isEu?'':'none';
 }
 
 // ─── TICKER SEARCH ────────────────────────────────────────────────────────
@@ -387,8 +386,11 @@ function buildDailyOverviewStats(dailies,matM,freqM,cpnBar,capBar,barType,putStk
       const acTrig=autocall-(obs-1)*(stepDn/100);
       if(obs>=fc&&wof>=acTrig&&obs<totalObs){result={type:'autocall',capital:1,months:obs*freqM,coupons};break;}
       if(obs===totalObs){
-        if(barType==='none'||wof>=capitalBarrier)result={type:'maturity_ok',capital:1,months:obs*freqM,coupons};
-        else{const cap=putStrike>0?Math.max(wof,putStrike):wof;result={type:cap<1?'maturity_loss':'maturity_ok',capital:cap,months:obs*freqM,coupons};}
+        let cap;
+        if(barType==='none'){cap=putStrike>0?Math.max(wof,putStrike):wof;}
+        else{cap=wof>=capitalBarrier?1:(putStrike>0?Math.max(wof,putStrike):wof);}
+        cap=Math.min(cap,1);
+        result={type:cap>=1?'maturity_ok':'maturity_loss',capital:cap,months:obs*freqM,coupons};
       }
     }
     if(!valid||!result)continue;
@@ -422,12 +424,12 @@ function simulate(si,monthlies,keys,matM,freqM,cpnBar,capBar,barType,putStk,ac,s
     }
     if(obs===totalObs){
       endObs=obs;
-      if(barType==='none'||wof>=capitalBarrier){
-        result={type:'maturity_ok',capital:1,months:obs*freqM,coupons};rr='Vencimiento OK';rb='blue';
-      }else{
-        const cap=putStrike>0?Math.max(wof,putStrike):wof;
-        result={type:'maturity_loss',capital:cap,months:obs*freqM,coupons};rr=`Pérdida (${(cap*100).toFixed(2)}%)`;rb='red';
-      }
+      let cap;
+      if(barType==='none'){cap=putStrike>0?Math.max(wof,putStrike):wof;}
+      else{cap=wof>=capitalBarrier?1:(putStrike>0?Math.max(wof,putStrike):wof);}
+      cap=Math.min(cap,1);
+      if(cap>=1){result={type:'maturity_ok',capital:1,months:obs*freqM,coupons};rr='Vencimiento OK';rb='blue';}
+      else{result={type:'maturity_loss',capital:cap,months:obs*freqM,coupons};rr=`Pérdida (${(cap*100).toFixed(2)}%)`;rb='red';}
     }else{rr=wof<couponBarrier?'Cupón diferido':'Cupón cobrado';rb=wof<couponBarrier?'amber':'gray';}
     rows.push({obs,label:mkl(keys[si+off]),perfs:perfs.map(p=>(p*100).toFixed(2)),wof:(wof*100).toFixed(2),rr,rb});
   }
